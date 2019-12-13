@@ -39,7 +39,10 @@ def calculate_f1_score(pred_field_flattened, target_field_flattened, verbose=Tru
         print('error!')
   precision = true_positive / (true_positive + false_positive)
   recall = true_positive / (true_positive + false_negative)
-  f1_score = 2 * precision * recall / (precision + recall)
+  if precision + recall == 0:
+    f1_score = 0.0
+  else:
+    f1_score = 2 * precision * recall / (precision + recall)
   #
   if verbose:
     print('precision: ' + str(precision))
@@ -72,12 +75,19 @@ def calculate_uncertainties(pred_field_flattened, var_field_flattened, target_fi
   num_false_in_bottom_10 = top_10_size - num_correct_in_bottom_10
   proportion_of_mistakes_in_bottom_10 = num_false_in_bottom_10 / num_false
   #
+  num_correct_in_middle = 0
+  for idx in range(top_10_size,is_correct_field_flattened.size - top_10_size):
+    num_correct_in_middle += is_correct_field_flattened[idxs[-(idx + 1)]]
+  num_false_in_middle = (is_correct_field_flattened.size - 2 * top_10_size) - num_correct_in_middle
+  proportion_of_mistakes_in_middle_part = num_false_in_middle / num_false
+  #
   if verbose:
+    print('ratio_correct: ' + str(ratio_correct))
     print('num_correct: ' + str(num_correct))
     print('num_false: ' + str(num_false))
-    print('ratio_correct: ' + str(ratio_correct))
     print('proportion_of_mistakes_in_top_10: ' + str(proportion_of_mistakes_in_top_10))
     print('proportion_of_mistakes_in_bottom_10: ' + str(proportion_of_mistakes_in_bottom_10))
+    print('proportion_of_mistakes_in_middle_part: ' + str(proportion_of_mistakes_in_middle_part))
   return proportion_of_mistakes_in_top_10
 
 

@@ -47,6 +47,23 @@ class UncertaintiesCallback(Callback):
             pred_field_flattened, var_field_flattened, target_field_flattened = model_factory.calculate_flattened_predictions(self.model, self.X_val, self.y_val, self.target_field_mean)
             score = my_utils.calculate_uncertainties(pred_field_flattened, var_field_flattened, target_field_flattened)
 
+class F1andUncertaintiesCallback(Callback):
+    def __init__(self, validation_data=(), interval=10, target_field_mean=0.5):
+        super(Callback, self).__init__()
+
+        self.interval = interval
+        self.X_val, self.y_val = validation_data
+        self.target_field_mean = target_field_mean
+
+    def on_epoch_end(self, epoch, logs={}):
+        if epoch % self.interval == 0:
+            print('epoch: ' + str(epoch))
+            print('interval: ' + str(self.interval))
+            pred_field_flattened, var_field_flattened, target_field_flattened = model_factory.calculate_flattened_predictions(self.model, self.X_val, self.y_val, self.target_field_mean, num_particles=100)
+            score = my_utils.calculate_f1_score(pred_field_flattened, target_field_flattened)
+            print('ratio_classes: ' + str(self.target_field_mean))
+            score = my_utils.calculate_uncertainties(pred_field_flattened, var_field_flattened, target_field_flattened)
+
 
 # custom f1 score callback
 class VisualizationCallback(Callback):
