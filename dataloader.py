@@ -18,31 +18,71 @@ import code, shutil # code.interact(local=dict(globals(), **locals()))
 import model_factory, my_utils, my_callbacks
 
 
-# DATA loading
-# method to load the isic data
-def load_isic_data():
-  x_train = []
-  y_train = []
-  for file in os.listdir('data/ISBI2016_ISIC_Part1_Training_Data'):
-    x_img = Image.open('data/ISBI2016_ISIC_Part1_Training_Data/' + file)
-    x_img = x_img.resize([224,224])
-    #x_train.append(np.array(x_img) / 255.0)
-    x_train.append(np.array(x_img))
-    nr = file[len('ISIC_'):-len('.jpg')]
-    y_img = Image.open('data/ISBI2016_ISIC_Part1_Training_GroundTruth/ISIC_' + nr + '_Segmentation.png')
-    y_img = y_img.resize([224,224])
-    #y_train.append(np.array(np.array(y_img) / 255, dtype=np.int8))
-    y_train.append(np.expand_dims(np.array(y_img) / 255, axis=-1))
-  return np.stack(x_train[:-100]), np.stack(y_train[:-100]), np.stack(x_train[-100:]), np.stack(y_train[-100:])
-
-
 # DATA preprocessing
-def preprocess_data():
-  print('preprocess data!')
-  x_train, y_train, x_val, y_val = load_isic_data()
-  # preprocess input according to keras preprocessing for the BACKBONE
-  x_train = preprocess_input(x_train) # TODO can be done in a far better way, that regards the backbone!
-  x_val = preprocess_input(x_val)
-  print('data preprocessed!')
-  return x_train, y_train, x_val, y_val
+def load_and_preprocess_data(dataset_dir):
+  positive_images = []
+  negative_images = []
+  #
+  print('load images')
+  for it, file in enumerate(os.listdir(dataset_dir + '/positive_samples')):
+    img = Image.open(dataset_dir + '/positive_samples/' + file)
+    img = img.resize([224,224])
+    #img = img.resize([299,299])
+    positive_images.append(img)
 
+  for it, file in enumerate(os.listdir(dataset_dir + '/negative_samples')):
+    img = Image.open(dataset_dir + '/negative_samples/' + file)
+    img = img.resize([224,224])
+    #img = img.resize([299,299])
+    negative_images.append(img)
+  #
+
+  print('preprocess data')
+  rust_train = positive_images[:-int(0.1 * len(positive_images))]
+  rust_test = positive_images[-int(0.1 * len(positive_images)):]
+
+  norust_train = negative_images[:-int(0.1 * len(negative_images))]
+  norust_test = negative_images[-int(0.1 * len(negative_images)):]
+
+  train_images = np.concatenate([np.stack(rust_train), np.stack(norust_train)])
+  test_images = np.concatenate([np.stack(rust_test), np.stack(norust_test)])
+
+  train_labels = np.concatenate([np.zeros(len(rust_train), dtype=np.int32), np.ones(len(norust_train), dtype=np.int32)])
+  test_labels = np.concatenate([np.zeros(len(rust_test), dtype=np.int32), np.ones(len(norust_test), dtype=np.int32)])
+
+  train_images = preprocess_input(train_images)
+  test_images = preprocess_input(test_images)
+  #
+  train_images = np.transpose(train_images, [0,3,1,2])
+  test_images = np.transpose(test_images, [0,3,1,2])
+  #
+  return train_images, test_images, train_labels, test_labels
+
+
+
+def extract_data_features(dataset_dir, save_features=True):
+  print('extract features with pretrained inception net')
+  #
+  train_images, test_images, train_labels, test_labels = load_and_preprocess_data(dataset_dir)
+  # resnet = ResNet50(include_top=False, weights='imagenet')
+  # resnet.predict(np.zeros([5,224,224,3]))
+  # code.interact(local=dict(globals(), **locals()))
+  train_images = InceptionResNetV2(include_top=False, weights='imagenet').predict(train_images)
+  test_images = InceptionResNetV2(include_top=False, weights='imagenet').predict(test_images)
+  # TODO store these + the groundtruth somewhere in order to avoid long computation times!!!
+  # code.interact(local=dict(globals(), **locals()))
+  if save_data:
+    np.savez(open(dataset_dir + '/preprocessed.npz','wb'), train_images=train_images, test_images=test_images, train_labels=train_labels, test_labels=test_labels)
+  #
+  return train_images, test_images, train_labels, test_labels
+
+
+
+def load_features(dataset_dir):
+  print('load data!')
+  data = np.load(open(dataset_dir + '/preprocessed.npz','rb'))
+  train_images = data['train_images']
+  test_images = data['test_images']
+  train_labels = data['train_labels']
+  test_labels = data['test_labels']
+  return train_images, test_images, train_labels, test_labels

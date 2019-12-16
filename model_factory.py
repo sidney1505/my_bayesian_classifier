@@ -4,6 +4,7 @@ import segmentation_models as sm
 from PIL import Image
 import numpy as np
 from tensorflow.keras.applications.inception_resnet_v2 import preprocess_input
+from tensorflow.keras.applications.inception_resnet_v2 import InceptionResNetV2
 from tensorflow.keras.layers import Input, Dense
 from tensorflow.keras import Model
 from tensorflow.keras import backend as K
@@ -22,47 +23,47 @@ import dataloader, my_utils, my_callbacks
 # create loss function for probabilistic model
 negloglik = lambda labels_distribution, labels: -tf.reduce_mean(labels.log_prob(labels_distribution))
 
-# own implementation of a stochastic version of the focal loss - but seem to either don't work or isn't implemented correctly
-def focal_loss(gamma=2.0, alpha=0.25):
-  parameterized_focal_loss = lambda labels_distribution, labels: \
-    -tf.reduce_mean(alpha * tf.pow(1.0 - tf.cast(labels_distribution, tf.float32), gamma)) * tf.reduce_mean((1.0 - alpha) * labels.log_prob(labels_distribution))
-  return parameterized_focal_loss
-
 
 
 # MODEL definition
-def create_model(is_probabilistic=True, loss=negloglik, num_channels = 64, num_classes = 2, backbone='inceptionresnetv2'):
-  # define the U-Net model
-  print('create Unet')
-   # with activation linear it seems to be possible to place another model on top of the U-Net
-  my_unet = sm.Unet(backbone, encoder_weights='imagenet', activation='linear', classes=num_channels)
+def create_bayesian_le_net():
+  pass
 
+
+# MODEL definition
+def create_model(is_probabilistic=True, loss=negloglik, height=5, width=5, num_channels = 1536, num_classes = 2, backbone='inceptionresnetv2', finetune_feature_extractor=True):
   # the second probabilistic part of the model
   if is_probabilistic:
-    dense_input  = Input(shape=(None, None, None, num_channels))
+    dense_input  = Input(shape=(None, height, width, num_channels))
+    dense_input_reshaped = tf.keras.layers.Reshape([-1, height * width * num_channels])(dense_input)
     # brings uncertainty into the model weights
-    dense_output = tfp.layers.DenseFlipout(num_channels, activation=tf.nn.relu)(dense_input)
-    dense_output = tfp.layers.DenseFlipout(num_classes)(dense_input)
+    dense_output = tfp.layers.DenseFlipout(num_channels, activation=tf.nn.leaky_relu)(dense_input_reshaped)
+    dense_output = tfp.layers.DenseFlipout(num_channels, activation=tf.nn.leaky_relu)(dense_output)
+    dense_output = tfp.layers.DenseFlipout(num_classes)(dense_output)
     # brings uncertainty into the output
     output_distribution = tfp.layers.DistributionLambda(lambda t: tfd.Categorical(logits=t))(dense_output)
   else:
     dense_input  = Input(shape=(None, None, None, num_channels))
     dense_output = tf.keras.layers.Dense(num_channels, activation=tf.nn.relu)(dense_input)
     output_distribution = tf.keras.layers.Dense(num_classes, activation=tf.nn.softmax)(dense_input)
+  #
   top_model = Model(inputs=dense_input, outputs=output_distribution, name='top_model')
-
-  # put both parts of the model together
-  unet_output = my_unet.output
-  full_output = top_model(unet_output)
-  full_model = Model(inputs=my_unet.input, outputs=full_output)
+  #
+  if finetune_feature_extractor:
+    #
+    feature_extractor = InceptionResNetV2(include_top=False, weights='imagenet')
+    # put both parts of the model together
+    unet_output = feature_extractor.output
+    full_output = top_model(unet_output)
+    full_model = Model(inputs=feature_extractor.input, outputs=full_output)
+  else:
+    full_model = top_model
   # compiles the keras model
   print('compile model!')
+  # elbo = lambda labels_distribution, labels: -tf.reduce_mean(labels.log_prob(labels_distribution)) + sum(full_model.losses) # TODO integrate this in the loss!
   full_model.compile( \
       'Adam', \
-      #loss=focal_loss(), \
-      loss=loss, \
-      # metrics=['accuracy', my_f1_score], \
-      metrics=['accuracy'], \
+      loss=loss
   )
   # return the completed model
   return full_model
@@ -70,39 +71,28 @@ def create_model(is_probabilistic=True, loss=negloglik, num_channels = 64, num_c
 
 
 # MODEL training
-def train_model(model, x_train, y_train, x_val, y_val, num_epochs=5, initial_epoch=0, target_field_mean=None):
-  # brings the data in the correct format to fit it
-  y_train_int = np.array(y_train, dtype=np.int32)
-  y_train_squeezed = y_train_int.squeeze()
+def train_model(model, x_train, y_train, x_val, y_val, num_epochs=50, initial_epoch=0, target_field_mean=None):
   #
-  train_positive_ratio = y_train_squeezed.mean()
-  y_val_int = np.array(y_val, dtype=np.int32)
-  y_val_squeezed = y_val_int.squeeze()
-  #
-  if target_field_mean == None:
-    target_field_mean = y_train_squeezed.mean()
-  # define the callbacks used
   values = [str(x) for x in time.gmtime()]
   model_name = '_'.join(values)
   os.makedirs("models/" + model_name)
   filepath="models/" + model_name + "/checkpoint-{epoch:02d}-{val_loss:.2f}.hdf5"
   checkpoint =  tf.keras.callbacks.ModelCheckpoint(filepath, monitor='val_loss', verbose=1, save_best_only=True, mode='min', period=num_epochs / 10)
   early_stopper = tf.keras.callbacks.EarlyStopping(monitor='loss', patience=5, restore_best_weights=True)
-  lr_decay = tf.keras.callbacks.ReduceLROnPlateau(monitor='train_loss')
+  lr_decay = tf.keras.callbacks.ReduceLROnPlateau(monitor='loss')
   # own callbacks
-  f1score_callback = my_callbacks.F1ScoreCallback(validation_data=(x_val, y_val_squeezed), interval=1, target_field_mean=target_field_mean)
-  uncertainties_callback = my_callbacks.UncertaintiesCallback(validation_data=(x_val, y_val_squeezed), interval=1, target_field_mean=target_field_mean)
-  visualization_callback = my_callbacks.VisualizationCallback(validation_data=(x_val, y_val_squeezed), interval=1, target_field_mean=target_field_mean)
+  if target_field_mean == None:
+    target_field_mean = y_train.mean()
+  f1andUncertaintiesCallback = my_callbacks.F1andUncertaintiesCallback(validation_data=(x_val, y_val), interval=1, target_field_mean=target_field_mean)
   #
   print('fit model!')
   history = model.fit( \
-     x=x_train,\
-     y=y_train_squeezed,\
-     batch_size=16,\
-     epochs=num_epochs,\
-     validation_data=(x_val, y_val_squeezed),\
-     initial_epoch=initial_epoch,\
-     callbacks=[early_stopper, checkpoint, lr_decay, f1score_callback, uncertainties_callback, visualization_callback] \
+   x=x_train,\
+   y=y_train,\
+   batch_size=16,\
+   epochs=num_epochs,\
+   validation_data=(x_val, y_val),\
+   callbacks=[early_stopper, checkpoint, lr_decay, f1andUncertaintiesCallback] \
   )
   #
   print('save model!')
