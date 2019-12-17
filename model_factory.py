@@ -31,25 +31,29 @@ def create_bayesian_le_net():
 
 
 # MODEL definition
-def create_model(is_probabilistic=True, loss=negloglik, height=5, width=5, num_channels = 1536, num_classes = 2, backbone='inceptionresnetv2', finetune_feature_extractor=True):
+def create_model(config):
   # the second probabilistic part of the model
-  if is_probabilistic:
-    dense_input  = Input(shape=(None, height, width, num_channels))
-    dense_input_reshaped = tf.keras.layers.Reshape([-1, height * width * num_channels])(dense_input)
+  dense_input  = Input(shape=(None, config['height'], config['width'], config['num_channels']))
+  dense_input_reshaped = tf.keras.layers.Reshape([-1, config['height'] * config['width'] * config['num_channels']])(dense_input)
+  if config['is_probabilistic']:
     # brings uncertainty into the model weights
-    dense_output = tfp.layers.DenseFlipout(num_channels, activation=tf.nn.leaky_relu)(dense_input_reshaped)
-    dense_output = tfp.layers.DenseFlipout(num_channels, activation=tf.nn.leaky_relu)(dense_output)
-    dense_output = tfp.layers.DenseFlipout(num_classes)(dense_output)
+    dense_output = tfp.layers.DenseFlipout(config['num_channels'], activation=tf.nn.leaky_relu)(dense_input_reshaped)
+    dense_output = tfp.layers.DenseFlipout(config['num_channels'], activation=tf.nn.leaky_relu)(dense_output)
+    dense_output = tf.keras.layers.Dropout(config['dropout_rate'])(dense_output)
+    dense_output = tfp.layers.DenseFlipout(config['num_classes'])(dense_output)
+    # dense_output = tfp.layers.DenseFlipout(num_classes, activation=tf.nn.softmax)(dense_output)
     # brings uncertainty into the output
     output_distribution = tfp.layers.DistributionLambda(lambda t: tfd.Categorical(logits=t))(dense_output)
   else:
-    dense_input  = Input(shape=(None, None, None, num_channels))
-    dense_output = tf.keras.layers.Dense(num_channels, activation=tf.nn.relu)(dense_input)
-    output_distribution = tf.keras.layers.Dense(num_classes, activation=tf.nn.softmax)(dense_input)
+    #
+    dense_output = tf.keras.layers.Dense(config['num_channels'], activation=tf.nn.relu)(dense_input_reshaped)
+    dense_output = tf.keras.layers.Dense(config['num_channels'], activation=tf.nn.relu)(dense_output)
+    dense_output = tf.keras.layers.Dropout(config['dropout_rate'])(dense_output, training=True)
+    output_distribution = tf.keras.layers.Dense(config['num_classes'], activation=tf.nn.softmax)(dense_output)
   #
   top_model = Model(inputs=dense_input, outputs=output_distribution, name='top_model')
   #
-  if finetune_feature_extractor:
+  if config['finetune_feature_extractor']:
     #
     feature_extractor = InceptionResNetV2(include_top=False, weights='imagenet')
     # put both parts of the model together
@@ -60,9 +64,22 @@ def create_model(is_probabilistic=True, loss=negloglik, height=5, width=5, num_c
     full_model = top_model
   # compiles the keras model
   print('compile model!')
-  # elbo = lambda labels_distribution, labels: -tf.reduce_mean(labels.log_prob(labels_distribution)) + sum(full_model.losses) # TODO integrate this in the loss!
+  if not config['is_probabilistic']:
+    loss = lambda labels, logits: tf.keras.losses.sparse_categorical_crossentropy(labels, logits)
+  elif config['loss_name'] == 'negloglik':
+    loss = lambda labels, labels_distribution: -tf.reduce_mean(labels_distribution.log_prob(labels))
+  elif config['loss_name'] == 'elbo':
+    loss = lambda labels, labels_distribution: -tf.reduce_mean(labels_distribution.log_prob(labels)) + sum(full_model.losses)
+  #
+  if config['optimizer_name'] == 'rmsprop':
+    optimizer = tf.keras.optimizers.RMSprop(learning_rate=config['learning_rate'])
+  elif config['optimizer_name'] == 'sgld':
+    optimizer = tfp.optimizer.StochasticGradientLangevinDynamics(0.001)
+  elif config['optimizer_name'] == 'vsgd':
+    optimizer = tfp.optimizer.VariationalSGD(batch_size=25, total_num_examples=125, max_learning_rate=0.01)
+  #
   full_model.compile( \
-      'Adam', \
+      optimizer=optimizer, \
       loss=loss
   )
   # return the completed model
@@ -71,37 +88,52 @@ def create_model(is_probabilistic=True, loss=negloglik, height=5, width=5, num_c
 
 
 # MODEL training
-def train_model(model, x_train, y_train, x_val, y_val, num_epochs=50, initial_epoch=0, target_field_mean=None):
+def train_model(model, x_train, y_train, x_val, y_val, config, target_field_mean=None):
   #
-  values = [str(x) for x in time.gmtime()]
-  model_name = '_'.join(values)
-  os.makedirs("models/" + model_name)
-  filepath="models/" + model_name + "/checkpoint-{epoch:02d}-{val_loss:.2f}.hdf5"
-  checkpoint =  tf.keras.callbacks.ModelCheckpoint(filepath, monitor='val_loss', verbose=1, save_best_only=True, mode='min', period=num_epochs / 10)
-  early_stopper = tf.keras.callbacks.EarlyStopping(monitor='loss', patience=5, restore_best_weights=True)
-  lr_decay = tf.keras.callbacks.ReduceLROnPlateau(monitor='loss')
+  datagen = tf.keras.preprocessing.image.ImageDataGenerator(
+    rotation_range=20,
+    width_shift_range=0.2,
+    height_shift_range=0.2,
+    horizontal_flip=True)
+  # compute quantities required for featurewise normalization
+  # (std, mean, and principal components if ZCA whitening is applied)
+  datagen.fit(x_train)
+  #
   # own callbacks
+  callbacks = []
   if target_field_mean == None:
     target_field_mean = y_train.mean()
-  f1andUncertaintiesCallback = my_callbacks.F1andUncertaintiesCallback(validation_data=(x_val, y_val), interval=1, target_field_mean=target_field_mean)
+  if config['num_classes'] == 2:
+    f1andUncertaintiesCallback = my_callbacks.F1andUncertaintiesCallback(validation_data=(x_val, y_val), interval=config['validation_interval'], target_field_mean=target_field_mean)
+    callbacks.append(f1andUncertaintiesCallback)
+  #
+  if config['model_name'] == None:
+    date_values = [str(x) for x in time.gmtime()]
+    config['model_name'] = '_'.join(date_values)
+    os.makedirs("models/" + config['model_name'])
+  filepath="models/" + config['model_name'] + "/checkpoint-{epoch:02d}.hdf5"
+  checkpoint = tf.keras.callbacks.ModelCheckpoint(filepath, monitor='f1_score', verbose=1, save_best_only=True, mode='max', period=config['validation_interval'])
+  callbacks.append(checkpoint)
+  #
+  early_stopper = tf.keras.callbacks.EarlyStopping(monitor='f1_score', patience=config['num_epochs'] / 4, restore_best_weights=True, mode='max')
+  callbacks.append(early_stopper)
+  # lr_decay = tf.keras.callbacks.ReduceLROnPlateau(monitor='loss')
   #
   print('fit model!')
-  history = model.fit( \
-   x=x_train,\
-   y=y_train,\
-   batch_size=16,\
-   epochs=num_epochs,\
-   validation_data=(x_val, y_val),\
-   callbacks=[early_stopper, checkpoint, lr_decay, f1andUncertaintiesCallback] \
+  history = model.fit_generator( \
+   datagen.flow(x_train, y_train, batch_size=config['batch_size']), \
+   epochs=config['num_epochs'],\
+   validation_data=datagen.flow(x_val, y_val, batch_size=config['batch_size']),\
+   callbacks=callbacks \
   )
   #
   print('save model!')
-  model.save_weights("models/" + model_name + "/final")
+  model.save_weights("models/" + config['model_name'] + "/final")
   # model.save('models/negative_loglikelihood_model.h5')
 
 
 
-# 
+# calculate_flattened_predictions(model, test_images, test_labelss, train_labels.mean())
 def calculate_flattened_predictions(model, x, y, target_field_mean=0.5, num_particles=10):
   print('calculate predictions!')
   prediction_list = [model.predict(x) for i in range(num_particles)]
@@ -110,6 +142,15 @@ def calculate_flattened_predictions(model, x, y, target_field_mean=0.5, num_part
   mean_field = np.mean(predictions_field, axis=0)
   var_field = np.var(predictions_field, axis=0)
   target_field = y
+  if len(mean_field.shape) == 3:
+     mean_field = np.squeeze(mean_field)
+     mean_field = np.transpose(mean_field)
+     mean_field = mean_field[0]
+     mean_field = np.transpose(mean_field)
+     var_field = np.squeeze(var_field)
+     var_field = np.transpose(var_field)
+     var_field = var_field[0]
+     var_field = np.transpose(var_field)
   #
   mean_field_flattened = mean_field.flatten()
   var_field_flattened = var_field.flatten()

@@ -53,16 +53,22 @@ class F1andUncertaintiesCallback(Callback):
 
         self.interval = interval
         self.X_val, self.y_val = validation_data
+        assert target_field_mean <= 0.5, "f1 score is not a good metric for more then 50% positive samples!!!"
         self.target_field_mean = target_field_mean
 
     def on_epoch_end(self, epoch, logs={}):
         if epoch % self.interval == 0:
             print('epoch: ' + str(epoch))
-            print('interval: ' + str(self.interval))
             pred_field_flattened, var_field_flattened, target_field_flattened = model_factory.calculate_flattened_predictions(self.model, self.X_val, self.y_val, self.target_field_mean)
-            score = my_utils.calculate_f1_score(pred_field_flattened, target_field_flattened)
-            print('ratio_classes: ' + str(self.target_field_mean))
-            score = my_utils.calculate_uncertainties(pred_field_flattened, var_field_flattened, target_field_flattened)
+            precision, recall, f1_score = my_utils.calculate_f1_score(pred_field_flattened, target_field_flattened)
+            logs['precision'] = precision
+            logs['recall'] = recall
+            logs['f1_score'] = f1_score
+            print('avg_target: ' + str(self.target_field_mean))
+            print('avg_prediction: ' + str(np.mean(pred_field_flattened)))
+            print('avg_uncertainty: ' + str(np.mean(var_field_flattened)))
+            uncertainty_score = my_utils.calculate_uncertainties(pred_field_flattened, var_field_flattened, target_field_flattened)
+            logs['uncertainty_score'] = uncertainty_score
 
 
 # custom f1 score callback

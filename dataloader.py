@@ -19,36 +19,40 @@ import model_factory, my_utils, my_callbacks
 
 
 # DATA preprocessing
-def load_and_preprocess_data(dataset_dir):
+def load_and_preprocess_binary_data(config):
   positive_images = []
   negative_images = []
   #
   print('load images')
-  for it, file in enumerate(os.listdir(dataset_dir + '/positive_samples')):
-    img = Image.open(dataset_dir + '/positive_samples/' + file)
+  for it, file in enumerate(os.listdir(config['dataset_dir'] + '/positive_samples')):
+    img = Image.open(config['dataset_dir'] + '/positive_samples/' + file)
     img = img.resize([224,224])
     #img = img.resize([299,299])
     positive_images.append(img)
 
-  for it, file in enumerate(os.listdir(dataset_dir + '/negative_samples')):
-    img = Image.open(dataset_dir + '/negative_samples/' + file)
+  for it, file in enumerate(os.listdir(config['dataset_dir'] + '/negative_samples')):
+    img = Image.open(config['dataset_dir'] + '/negative_samples/' + file)
     img = img.resize([224,224])
     #img = img.resize([299,299])
     negative_images.append(img)
   #
 
   print('preprocess data')
-  rust_train = positive_images[:-int(0.1 * len(positive_images))]
-  rust_test = positive_images[-int(0.1 * len(positive_images)):]
+  positive_train = positive_images[:-int(config['val_split'] * len(positive_images))]
+  positive_test = positive_images[-int(config['val_split'] * len(positive_images)):]
 
-  norust_train = negative_images[:-int(0.1 * len(negative_images))]
-  norust_test = negative_images[-int(0.1 * len(negative_images)):]
+  negative_train = negative_images[:-int(config['val_split'] * len(negative_images))]
+  negative_test = negative_images[-int(config['val_split'] * len(negative_images)):]
 
-  train_images = np.concatenate([np.stack(rust_train), np.stack(norust_train)])
-  test_images = np.concatenate([np.stack(rust_test), np.stack(norust_test)])
+  train_images = np.concatenate([np.stack(positive_train), np.stack(negative_train)])
+  test_images = np.concatenate([np.stack(positive_test), np.stack(negative_test)])
 
-  train_labels = np.concatenate([np.zeros(len(rust_train), dtype=np.int32), np.ones(len(norust_train), dtype=np.int32)])
-  test_labels = np.concatenate([np.zeros(len(rust_test), dtype=np.int32), np.ones(len(norust_test), dtype=np.int32)])
+  if len(positive_train) <= len(negative_train):
+    train_labels = np.concatenate([np.ones(len(positive_train), dtype=np.int32), np.zeros(len(negative_train), dtype=np.int32)])
+    test_labels = np.concatenate([np.ones(len(positive_test), dtype=np.int32), np.zeros(len(negative_test), dtype=np.int32)])
+  else:
+    train_labels = np.concatenate([np.zeros(len(positive_train), dtype=np.int32), np.ones(len(negative_train), dtype=np.int32)])
+    test_labels = np.concatenate([np.zeros(len(positive_test), dtype=np.int32), np.ones(len(negative_test), dtype=np.int32)])
 
   train_images = preprocess_input(train_images)
   test_images = preprocess_input(test_images)
@@ -63,7 +67,7 @@ def load_and_preprocess_data(dataset_dir):
 def extract_data_features(dataset_dir, save_features=True):
   print('extract features with pretrained inception net')
   #
-  train_images, test_images, train_labels, test_labels = load_and_preprocess_data(dataset_dir)
+  train_images, test_images, train_labels, test_labels = load_and_preprocess_binary_data(dataset_dir)
   # resnet = ResNet50(include_top=False, weights='imagenet')
   # resnet.predict(np.zeros([5,224,224,3]))
   # code.interact(local=dict(globals(), **locals()))

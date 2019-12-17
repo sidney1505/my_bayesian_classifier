@@ -21,7 +21,9 @@ import model_factory, dataloader, my_callbacks
 
 # own version of calculating the F1 score
 def calculate_f1_score(pred_field_flattened, target_field_flattened, verbose=True):
-  assert pred_field_flattened.size == target_field_flattened.size, "sizes aren't equal in calculate_f1_score"
+  if not pred_field_flattened.size == target_field_flattened.size:
+    print("sizes don't match in calculate_f1_score")
+    code.interact(local=dict(globals(), **locals()))
   true_positive = 0
   false_positive = 0
   false_negative = 0
@@ -48,14 +50,16 @@ def calculate_f1_score(pred_field_flattened, target_field_flattened, verbose=Tru
     print('precision: ' + str(precision))
     print('recall: ' + str(recall))
     print('f1_score: ' + str(f1_score))
-  return f1_score
+  return precision, recall, f1_score
 
 
 
 
 #
 def calculate_uncertainties(pred_field_flattened, var_field_flattened, target_field_flattened, verbose=True):
-  assert pred_field_flattened.size == var_field_flattened.size == target_field_flattened.size, "sizes don't match in check_uncertainties"
+  if not pred_field_flattened.size == var_field_flattened.size == target_field_flattened.size:
+    print("sizes don't match in check_uncertainties")
+    code.interact(local=dict(globals(), **locals()))
   is_correct_field_flattened = np.array(pred_field_flattened == target_field_flattened, dtype=np.int32)
   num_correct = np.sum(is_correct_field_flattened)
   num_false = is_correct_field_flattened.size - num_correct
@@ -87,7 +91,7 @@ def calculate_uncertainties(pred_field_flattened, var_field_flattened, target_fi
     print('num_false: ' + str(num_false))
     print('proportion_of_mistakes_in_top_10: ' + str(proportion_of_mistakes_in_top_10))
     print('proportion_of_mistakes_in_bottom_10: ' + str(proportion_of_mistakes_in_bottom_10))
-    print('proportion_of_mistakes_in_middle_part: ' + str(proportion_of_mistakes_in_middle_part))
+    print('avg_proportion_of_mistakes_in_middle_part: ' + str(proportion_of_mistakes_in_middle_part / 8))
   return proportion_of_mistakes_in_top_10
 
 

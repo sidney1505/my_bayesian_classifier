@@ -15,30 +15,35 @@ import code, shutil # code.interact(local=dict(globals(), **locals()))
 
 # own librabries
 import model_factory, dataloader, my_utils, my_callbacks
-import tensorflow as tf
-from tensorflow.keras.applications.inception_resnet_v2 import InceptionResNetV2
-# from tensorflow.keras.applications.resnet import ResNet50
-# from keras.applications.inception_resnet_v2 import InceptionResNetV2
-from tensorflow.keras.applications.inception_resnet_v2 import preprocess_input
-import tensorflow_probability as tfp
-from tensorflow_probability import distributions as tfd
-import numpy as np
-import code, os
-from PIL import Image
-#code.interact(local=dict(globals(), **locals()))
 
-# (ctrain_images, ctrain_labels), (ctest_images, ctst_labels) = cifar10.load_data()
-FINETUNE_FEATURE_EXTRACTOR = True
-DATASET_DIR = 'data/corrosion'
-# DATASET_DIR = 'data/isic2019'
+config = {
+	'finetune_feature_extractor' : True,
+	'num_classes' : 2,
+	'is_probabilistic' : True,
+	'dataset_dir' : 'data/corrosion',
+	'validation_interval' : 1,
+	'val_split' : 0.2,
+	'optimizer_name' : 'rmsprop',
+	'loss_name' : 'elbo',
+	'num_channels' : 1536,
+	'height' : 5,
+	'width' : 5,
+	'model_name' : None,
+	'batch_size' : 25,
+	'dropout_rate' : 0.5,
+	'learning_rate' : 0.001,
+	'num_epochs' : 100
+}
 
 print('enter your command!')
 code.interact(local=dict(globals(), **locals()))
 # possible example run
 #
-train_images, test_images, train_labels, test_labels = dataloader.load_and_preprocess_data(DATASET_DIR)
+train_images, test_images, train_labels, test_labels = dataloader.load_and_preprocess_binary_data(config=config)
 #
-model = model_factory.create_model(finetune_feature_extractor=FINETUNE_FEATURE_EXTRACTOR)
+model = model_factory.create_model(config=config)
 #
-model_factory.train_model(model, train_images, train_labels, test_images, test_labels)
+model_factory.train_model(model, train_images, train_labels, test_images, test_labels, config=config)
 # some sort of evaluation would fit here
+x = model_factory.calculate_flattened_predictions(model, test_images, test_labels, train_labels.mean())
+results = (x[0] == x[2])
