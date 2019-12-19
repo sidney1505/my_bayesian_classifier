@@ -11,6 +11,6 @@ for it, row in enumerate(csv_reader):
 		continue
 	for i in range(len(row)):
 		if row[i] == '1.0':
-			if not os.exists('data/isic2019_multiclass/' + str(i)):
-				os.makedirs('data/isic2019_multiclass/' + str(i))
-			shutil.move('data/ISIC_2019_Training_Input/ISIC_2019_Training_Input/' + row[0] + '.jpg', 'data/isic2019_multiclass/' + str(i) + 'positive_samples/' + row[0] + '.jpg')
+			if not os.path.exists('data/isic2019_multiclass/' + str(i - 1)):
+				os.makedirs('data/isic2019_multiclass/' + str(i - 1))
+			shutil.move('data/ISIC_2019_Training_Input/' + row[0] + '.jpg', 'data/isic2019_multiclass/' + str(i - 1) + '/' + row[0] + '.jpg')

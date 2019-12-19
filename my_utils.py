@@ -52,6 +52,14 @@ def calculate_f1_score(pred_field_flattened, target_field_flattened, verbose=Tru
     print('f1_score: ' + str(f1_score))
   return precision, recall, f1_score
 
+# own version of calculating the F1 score
+def calculate_accuracy(pred_field_flattened, target_field_flattened, verbose=True):
+  if not pred_field_flattened.size == target_field_flattened.size:
+    print("sizes don't match in calculate_f1_score")
+    code.interact(local=dict(globals(), **locals()))
+  num_correct = np.sum(pred_field_flattened == target_field_flattened)
+  accuracy = num_correct / pred_field_flattened.size
+  return accuracy
 
 
 
@@ -140,77 +148,3 @@ def tensorflow_f1_score(target_field, mean_pred_field):
   f1_score = 2 * precision * recall / (precision + recall)
   #
   return f1_score
-
-
-
-
-# visualization of the uncertainties
-# visualize_uncertainty(0)
-def visualize_uncertainty(model, image_nr, num_particles=10, epoch_str='', target_field_mean=0.5, print_metrics=True):
-  shutil.rmtree('visualizations/' + epoch_str + '_' + str(image_nr), ignore_errors=True)
-  os.makedirs('visualizations/' + epoch_str + '_' + str(image_nr))
-  files = os.listdir('data/ISBI2016_ISIC_Part1_Training_Data')
-  file = files[image_nr]
-  x_img = Image.open('data/ISBI2016_ISIC_Part1_Training_Data/' + file)
-  x_img = x_img.resize([224,224])
-  x_img = np.expand_dims(np.array(x_img), 0)
-  x_img = preprocess_input(x_img)
-  #
-  nr = file[len('ISIC_'):-len('.jpg')]
-  y_img = Image.open('data/ISBI2016_ISIC_Part1_Training_GroundTruth/ISIC_' + nr + '_Segmentation.png')
-  y_img = np.array(np.array(y_img.resize([224,224])) / 255, dtype=np.int32)
-  #
-  print('make predictions!')
-  pred_field_flattened, var_field_flattened, target_field_flattened = model_factory.calculate_flattened_predictions(model, x_img, y_img, target_field_mean=target_field_mean, num_particles=num_particles)
-  #
-  var_field_normalized_flattened = (var_field_flattened - var_field_flattened.min()) / (var_field_flattened.max() - var_field_flattened.min())
-  error_field_flattened = np.abs(pred_field_flattened - target_field_flattened)
-  #
-  if print_metrics:
-    f1_score = calculate_f1_score(pred_field_flattened, target_field_flattened)
-    proportion_of_mistakes_in_top_10 = calculate_uncertainties(pred_field_flattened, var_field_normalized_flattened, target_field_flattened)
-  # create overview
-  print('create overview!')
-  overview = np.zeros([224 + 20 + 224, 224 + 20 + 224, 3], dtype=np.float32)
-  #
-  for i in range(overview.shape[0]):
-    for j in range(overview.shape[1]):
-      if i >= 224 and i < 264 or j >= 224 and j < 264:
-        overview[i][j] = np.ones([3], dtype=np.float32)
-  #
-  for it in range(pred_field_flattened.size):
-    row = int(it / 224)
-    col = it - 224 * row
-    overview[row][col][1] = float(pred_field_flattened[it])
-  pred_field_flattened_floats = np.array(pred_field_flattened, dtype=np.float32)
-  pred_field = np.array(255 * pred_field_flattened_floats.reshape([224,224]), dtype=np.uint8)
-  img_pred_field = Image.fromarray(pred_field, mode='L')
-  img_pred_field.save('visualizations/' + str(image_nr) + '/pred_visualization.png')
-  #
-  for it in range(target_field_flattened.size):
-    row = int(it / 224)
-    col = it - 224 * row
-    overview[row][col + 224 + 20][2] = float(target_field_flattened[it])
-  target_field_flattened_floats = np.array(target_field_flattened, dtype=np.float32)
-  target_field = np.array(255 * target_field_flattened_floats.reshape([224,224]), dtype=np.uint8)
-  img_target_field = Image.fromarray(target_field, mode='L')
-  img_target_field.save('visualizations/' + epoch_str + '_' + str(image_nr) + '/target_visualization.png')
-  #
-  for it in range(var_field_normalized_flattened.size):
-    row = int(it / 224)
-    col = it - 224 * row
-    overview[row + 224 + 20][col][0] = float(var_field_normalized_flattened[it])
-  var_field_flattened_floats = np.array(var_field_flattened, dtype=np.float32)
-  var_field = np.array(255 * var_field_flattened_floats.reshape([224,224]), dtype=np.uint8)
-  img_var_field = Image.fromarray(var_field, mode='L')
-  img_var_field.save('visualizations/' + epoch_str + '_' + str(image_nr) + '/var_visualization.png')
-  #
-  for it in range(error_field_flattened.size):
-    row = int(it / 224)
-    col = it - 224 * row
-    overview[row + 224 + 20][col + 224 + 20][0] = float(error_field_flattened[it])
-  error_field_flattened_floats = np.array(error_field_flattened, dtype=np.float32)
-  error_field = np.array(255 * error_field_flattened_floats.reshape([224,224]), dtype=np.uint8)
-  img_error_field = Image.fromarray(error_field, mode='L')
-  img_error_field.save('visualizations/' + epoch_str + '_' + str(image_nr) + '/error_visualization.png')
-  print('overview created!')

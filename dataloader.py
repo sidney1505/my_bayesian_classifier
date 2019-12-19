@@ -63,6 +63,69 @@ def load_and_preprocess_binary_data(config):
   return train_images, test_images, train_labels, test_labels
 
 
+def load_and_preprocess_multiclass_data_with_numpy(config):
+  # TODO better let this do by the dataloader!!!
+  images_by_class = config['num_classes'] * [[]]
+  #
+  print('load images')
+  for class_nr, class_path in enumerate(os.listdir(config['dataset_dir'])):
+    print(class_nr)
+    for it, file in enumerate(os.listdir(config['dataset_dir'] + '/' + class_path)):
+      img = Image.open(config['dataset_dir'] + '/' + class_path + '/' + file)
+      img = img.resize([224,224])
+      images_by_class[class_nr].append(img)
+
+  print('preprocess data')
+  code.interact(local=dict(globals(), **locals()))
+  #
+  train_images_by_class = list(map(lambda class_nr: images_by_class[class_nr][:-int(config['val_split'] * len(images_by_class[class_nr]))], range(config['num_classes'])))
+  val_images_by_class = list(map(lambda class_nr: images_by_class[class_nr][-int(config['val_split'] * len(images_by_class[class_nr])):], range(config['num_classes'])))
+  #
+  train_images = np.concatenate(list(map(lambda elem: np.stack(elem), train_images_by_class)))
+  val_images = np.concatenate(list(map(lambda elem: np.stack(elem), val_images_by_class)))
+  #
+  train_labels = np.concatenate(list(map(lambda class_nr: class_nr * np.ones(len(train_images_by_class[class_nr]), dtype=np.int32), range(config['num_classes']))))
+  val_labels = np.concatenate(list(map(lambda class_nr: class_nr * np.ones(len(val_images_by_class[class_nr]), dtype=np.int32), range(config['num_classes']))))
+  #
+  train_images = preprocess_input(train_images)
+  val_images = preprocess_input(val_images)
+  #
+  train_images = np.transpose(train_images, [0,3,1,2])
+  val_images = np.transpose(val_images, [0,3,1,2])
+  #
+  return train_images, val_images, train_labels, test_labels
+
+
+
+def load_and_preprocess_multiclass_validation_data(config):
+  # TODO better let this do by the dataloader!!!
+  images_by_class = config['num_classes'] * [[]]
+  #
+  print('load images')
+  for class_nr, class_path in enumerate(os.listdir(config['dataset_dir'])):
+    print(class_nr)
+    for it, file in enumerate(os.listdir(config['dataset_dir'] + '/' + class_path)):
+      '''if it >= 20:
+        break'''
+      img = Image.open(config['dataset_dir'] + '/' + class_path + '/' + file)
+      img = img.resize([224,224])
+      images_by_class[class_nr].append(img)
+
+  print('preprocess data')
+  #
+  val_images_by_class = list(map(lambda class_nr: images_by_class[class_nr][-int(config['val_split'] * len(images_by_class[class_nr])):], range(config['num_classes'])))
+  #
+  val_images = np.concatenate(list(map(lambda elem: np.stack(elem), val_images_by_class)))
+  #
+  val_images = preprocess_input(val_images)
+  # channels first as demanded
+  val_images = np.transpose(val_images, [0,3,1,2])
+  #
+  val_labels = np.concatenate(list(map(lambda class_nr: class_nr * np.ones(len(val_images_by_class[class_nr]), dtype=np.int32), range(config['num_classes']))))
+  #
+  return val_images, val_labels
+
+
 
 def extract_data_features(dataset_dir, save_features=True):
   print('extract features with pretrained inception net')
