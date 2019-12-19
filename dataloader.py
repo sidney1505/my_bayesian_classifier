@@ -12,12 +12,17 @@ def load_and_preprocess_binary_data(config):
     #
     print('load images')
     for it, file in enumerate(os.listdir(config['dataset_dir'] + '/positive_samples')):
+        if config['debug_mode'] and it >= 500:
+            print('careful, its the debug moad, which doent load all data!')
+            break
         img = Image.open(config['dataset_dir'] + '/positive_samples/' + file)
         img = img.resize([224,224])
         #img = img.resize([299,299])
         positive_images.append(img)
 
     for it, file in enumerate(os.listdir(config['dataset_dir'] + '/negative_samples')):
+        if config['debug_mode'] and it >= 500:
+            break
         img = Image.open(config['dataset_dir'] + '/negative_samples/' + file)
         img = img.resize([224,224])
         #img = img.resize([299,299])
@@ -94,8 +99,8 @@ def load_and_preprocess_multiclass_validation_data(config):
     for class_nr, class_path in enumerate(os.listdir(config['dataset_dir'])):
         print(class_nr)
         for it, file in enumerate(os.listdir(config['dataset_dir'] + '/' + class_path)):
-            '''if it >= 20:
-                break'''
+            if config['debug_mode'] and it >= 500:
+                break
             img = Image.open(config['dataset_dir'] + '/' + class_path + '/' + file)
             img = img.resize([224,224])
             images_by_class[class_nr].append(img)

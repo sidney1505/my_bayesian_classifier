@@ -7,7 +7,8 @@ from tensorflow.keras import Model
 from tensorflow.keras.callbacks import ModelCheckpoint
 import tensorflow_probability as tfp
 from tensorflow_probability import distributions as tfd
-import time, scipy
+import time, scipy, os
+from scipy import stats
 import code # code.interact(local=dict(globals(), **locals()))
 
 # own librabries
@@ -63,8 +64,8 @@ def create_model(config):
         optimizer = tfp.optimizer.VariationalSGD(batch_size=25, total_num_examples=125, max_learning_rate=0.01)
     #
     full_model.compile( \
-            optimizer=optimizer, \
-            loss=loss
+        optimizer=optimizer, \
+        loss=loss
     )
     # return the completed model
     return full_model
@@ -72,22 +73,35 @@ def create_model(config):
 
 
 # MODEL training
-def train_model(model, x_val, y_val, config, x_train=None, y_train=None, target_field_mean=None):
+def train_model(model, x_val, y_val, config, x_train=None, y_train=None, target_field_mean=None): 
     #
-    datagen = tf.keras.preprocessing.image.ImageDataGenerator(
-        rotation_range=20,
-        width_shift_range=0.2,
-        height_shift_range=0.2,
-        horizontal_flip=True,
-        preprocessing_function=preprocess_input,
-        data_format='channels_first')
+    if config['load_data_with_numpy']:
+        datagen = tf.keras.preprocessing.image.ImageDataGenerator(
+            rotation_range=20,
+            width_shift_range=0.2,
+            height_shift_range=0.2,
+            horizontal_flip=True)
+        datagen.fit(x_train) # only possible, if x_train is    precomputed
+        data_loader = datagen.flow(x_train, y_train, batch_size=config['batch_size'])
+    else:
+        datagen = tf.keras.preprocessing.image.ImageDataGenerator(
+            rotation_range=20,
+            width_shift_range=0.2,
+            height_shift_range=0.2,
+            horizontal_flip=True,
+            preprocessing_function=preprocess_input,
+            data_format='channels_first')
+        data_loader = datagen.flow_from_directory(config['dataset_dir'], batch_size=config['batch_size'], target_size=(224, 224)),
     # datagen.fit(x_train) # only possible, if x_train is    precomputed
 
     # own callbacks
     callbacks = []
     if config['num_classes'] == 2:
         if target_field_mean == None:
-            target_field_mean = y_train.mean()
+            if config['load_data_with_numpy']:
+                target_field_mean = y_train.mean()
+            else:
+                target_field_mean = y_val.mean() # TODO this way is very dirty
         f1andUncertaintiesCallback = my_callbacks.F1andUncertaintiesCallback(validation_data=(x_val, y_val), config=config, target_field_mean=target_field_mean)
         callbacks.append(f1andUncertaintiesCallback)
     elif config['num_classes'] >= 2:
@@ -109,11 +123,10 @@ def train_model(model, x_val, y_val, config, x_train=None, y_train=None, target_
     #
     print('fit model!')
     history = model.fit_generator( \
-     datagen.flow_from_directory(config['dataset_dir'], batch_size=config['batch_size'], target_size=(224, 224)), \
-     #datagen.flow(x_val, y_val, batch_size=config['batch_size']),
-     epochs=config['num_epochs'],\
-     validation_data=datagen.flow(x_val, y_val, batch_size=config['batch_size']),\
-     callbacks=callbacks \
+        data_loader, \
+        epochs=config['num_epochs'],\
+        validation_data=datagen.flow(x_val, y_val, batch_size=config['batch_size']),\
+        callbacks=callbacks \
     )
     #
     print('save model!')
@@ -124,14 +137,14 @@ def train_model(model, x_val, y_val, config, x_train=None, y_train=None, target_
 
 # calculate_flattened_predictions(model, test_images, test_labelss, train_labels.mean())
 def calculate_flattened_predictions(model, x, y, config, target_field_mean=0.5, num_particles=10):
+    print('calculate predictions!')
     pred_field_flattened_list, var_field_flattened_list, target_field_flattened_list = [], [], []
     for split in range(config['num_splits']):
         target_field = y[config['num_splits'] * split: config['num_splits'] * (split + 1)]
         x_input = x[config['num_splits'] * split: config['num_splits'] * (split + 1)]
-        print('calculate predictions!')
         prediction_list = [model.predict(x_input) for i in range(config['num_particles'])]
         target_field_flattened = target_field.flatten()
-        if config['num_classes'] >= 2:
+        if config['num_classes'] > 2:
             # TODO doesn't work for segmentation in that form
             prediction_field = np.zeros([prediction_list[0].size, config['num_classes']])
             for prediction in prediction_list:
@@ -140,7 +153,7 @@ def calculate_flattened_predictions(model, x, y, config, target_field_mean=0.5, 
                     prediction_field[idx][prediction_flattened[idx]] += 1
             pred_field_flattened = np.argmax(prediction_field, axis=-1)
             prediction_field_transposed = np.transpose(prediction_field)
-            var_field_flattened = scipy.stats.entropy(prediction_field_transposed)
+            var_field_flattened = stats.entropy(prediction_field_transposed)
         elif config['num_classes'] == 2:
             predictions_field = np.array(prediction_list)
             mean_field = np.mean(predictions_field, axis=0) # TODO will this cause balancing problems???

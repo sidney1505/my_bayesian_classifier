@@ -3,7 +3,7 @@ mkdir data
 mkdir models
 mkdir logs
 mkdir visualizations
-# download and prepare the data
+# download and prepare the binary data
 wget https://s3.amazonaws.com/isic-challenge-2019/ISIC_2019_Training_Input.zip
 unzip ISIC_2019_Training_Input.zip
 rm ISIC_2019_Training_Input.zip

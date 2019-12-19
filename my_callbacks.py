@@ -1,5 +1,6 @@
 import code # code.interact(local=dict(globals(), **locals()))
 from tensorflow.keras.callbacks import Callback
+import numpy as np
 
 # own librabries
 import model_factory, my_utils
