@@ -1,22 +1,10 @@
-import os
-import tensorflow as tf
-import segmentation_models as sm
-from PIL import Image
-import numpy as np
-from tensorflow.keras.applications.inception_resnet_v2 import preprocess_input
-from tensorflow.keras.layers import Input, Dense
-from tensorflow.keras import Model
-from tensorflow.keras import backend as K
-from tensorflow.keras.callbacks import ModelCheckpoint
-import tensorflow_probability as tfp
-from tensorflow_probability import distributions as tfd
-from tensorflow.keras.models import load_model
-import sklearn, time
-import code, shutil # code.interact(local=dict(globals(), **locals()))
+import code # code.interact(local=dict(globals(), **locals()))
 from tensorflow.keras.callbacks import Callback
 
 # own librabries
-import model_factory, dataloader, my_utils
+import model_factory, my_utils
+
+
 
 class F1andUncertaintiesCallback(Callback):
     def __init__(self, validation_data, config, target_field_mean=0.5):
@@ -41,6 +29,8 @@ class F1andUncertaintiesCallback(Callback):
             print('avg_uncertainty: ' + str(np.mean(var_field_flattened)))
             uncertainty_score = my_utils.calculate_uncertainties(pred_field_flattened, var_field_flattened, target_field_flattened)
             logs['uncertainty_score'] = uncertainty_score
+
+
 
 class AccuracyAndUncertaintiesCallback(Callback):
     def __init__(self, validation_data, config):

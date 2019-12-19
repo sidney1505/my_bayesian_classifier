@@ -1,21 +1,6 @@
-import os
 import tensorflow as tf
-import segmentation_models as sm
-from PIL import Image
 import numpy as np
-from tensorflow.keras.applications.inception_resnet_v2 import preprocess_input
-from tensorflow.keras.layers import Input, Dense
-from tensorflow.keras import Model
-from tensorflow.keras import backend as K
-from tensorflow.keras.callbacks import ModelCheckpoint
-import tensorflow_probability as tfp
-from tensorflow_probability import distributions as tfd
-from tensorflow.keras.models import load_model
-import sklearn, time
-import code, shutil # code.interact(local=dict(globals(), **locals()))
-
-# own librabries
-import model_factory, dataloader, my_callbacks
+import code # code.interact(local=dict(globals(), **locals()))
 
 
 
@@ -52,7 +37,9 @@ def calculate_f1_score(pred_field_flattened, target_field_flattened, verbose=Tru
     print('f1_score: ' + str(f1_score))
   return precision, recall, f1_score
 
-# own version of calculating the F1 score
+
+
+# own version of calculating the accuracy
 def calculate_accuracy(pred_field_flattened, target_field_flattened, verbose=True):
   if not pred_field_flattened.size == target_field_flattened.size:
     print("sizes don't match in calculate_f1_score")
@@ -63,7 +50,7 @@ def calculate_accuracy(pred_field_flattened, target_field_flattened, verbose=Tru
 
 
 
-#
+# gives some intuition for the correlation of the errors and the uncertainties
 def calculate_uncertainties(pred_field_flattened, var_field_flattened, target_field_flattened, verbose=True):
   if not pred_field_flattened.size == var_field_flattened.size == target_field_flattened.size:
     print("sizes don't match in check_uncertainties")
@@ -114,16 +101,6 @@ def tensorflow_f1_score(target_field, mean_pred_field):
   pred_field_flattened = tf.map_fn(lambda mean_pred: tf.cast(mean_pred >= quantile, tf.float32), mean_pred_field_flattened)
   pred_field_flattened_int = tf.cast(pred_field_flattened, tf.int32)
   target_field_flattened_int = tf.cast(target_field_flattened, tf.int32)
-  '''#
-  update_true_positive = lambda value, pred, target: value + tf.cast(pred == 1 and target == 1, tf.int32)
-  update_false_positive = lambda value, pred, target: value + tf.cast(pred == 1 and target == 0, tf.int32)
-  update_false_negative = lambda value, pred, target: value + tf.cast(pred == 0 and target == 1, tf.int32)
-  update_true_negative = lambda value, pred, target: value + tf.cast(pred == 0 and target == 0, tf.int32)
-  #
-  update_values = lambda tp, fp, fn, tn, pred, target: \
-    update_true_positive(tp, pred, target), update_false_positive(fp, pred, target), update_false_negative(fn, pred, target), update_true_negative(tn, pred, target)
-  #
-  tp, fp, fn, tn = tf.reduce(lambda it, akk: update_values(akk[0], akk[1], akk[2], akk[3], it[0], it[1]), zip(pred_field_flattened_int, target_field), [0,0,0,0])'''
   #
   true_positive_fn = lambda pred, target: tf.cast(tf.logical_and(tf.math.equal(pred, 1), tf.math.equal(target, 1)), tf.int32)
   false_positive_fn = lambda pred, target: tf.cast(tf.logical_and(tf.math.equal(pred, 1), tf.math.equal(target, 0)), tf.int32)
